@@ -46,6 +46,7 @@ public sealed class SimpleWebServer
     private readonly Dictionary<string, Func<Task<Response>>> _exact = new(StringComparer.Ordinal);
     private readonly List<(string Prefix, Func<string, Task<Response>> Handler)> _prefix = new();
     private readonly Dictionary<string, (Func<PostRequest, Task<Response>> Handler, int MaxBody)> _post = new(StringComparer.Ordinal);
+    private readonly Dictionary<string,string> _protectedPrefixes=new(StringComparer.Ordinal);
     private string? _wsPath;
     private Func<WebSocket, CancellationToken, Task>? _wsHandler;
 
@@ -100,6 +101,11 @@ public sealed class SimpleWebServer
     /// a larger one is answered 413 without being read.</summary>
     public void MapPost(string path, int maxBodyBytes, Func<PostRequest, Task<Response>> handler) =>
         _post[path] = (handler, maxBodyBytes);
+    public void MapProtectedLoopbackGetPrefix(string prefix,string token,Func<string,Response> handler)
+    {
+        if(token.Length<43||token.Length>128||token.Any(c=>!char.IsAsciiLetterOrDigit(c)&&c!='_'&&c!='-'))throw new InvalidOperationException("ROUTE_TOKEN_REQUIRED");
+        _protectedPrefixes.Add(prefix,token);MapGetPrefix(prefix,handler);
+    }
     public void MapWebSocket(string path, Func<WebSocket, CancellationToken, Task> handler)
     {
         _wsPath = path;
@@ -194,7 +200,14 @@ public sealed class SimpleWebServer
                     return; // socket is now owned by the WebSocket handler
                 }
 
-                var resp = await RouteAsync(req).ConfigureAwait(false);
+                Response resp;
+                var protectedRoute=_protectedPrefixes.FirstOrDefault(x=>req.Path.StartsWith(x.Key,StringComparison.Ordinal));
+                if(protectedRoute.Key is not null &&
+                    (!IPAddress.IsLoopback(((IPEndPoint)client.Client.RemoteEndPoint!).Address)||
+                     !req.Headers.TryGetValue("authorization",out var auth)||
+                     !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(auth),Encoding.UTF8.GetBytes("Bearer "+protectedRoute.Value))))
+                    resp=new Response(403,"application/json","{\"code\":\"ROUTE_ACCESS_DENIED\"}"u8.ToArray());
+                else resp=await RouteAsync(req).ConfigureAwait(false);
                 var keepAlive = !req.Headers.TryGetValue("connection", out var conn)
                     || !conn.Contains("close", StringComparison.OrdinalIgnoreCase);
                 if (!await WriteResponseAsync(stream, resp, keepAlive, ct).ConfigureAwait(false)) return;

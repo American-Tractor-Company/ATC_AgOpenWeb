@@ -357,6 +357,21 @@ public sealed class RemoteServerHost
         };
 
         var server = new SimpleWebServer(port);
+        // Disabled by default; the extension returns a frozen preview only.
+        if(Environment.GetEnvironmentVariable("ATC_AGOPEN_ROUTE_PREVIEW_ENABLED")=="true"){
+            var tokenFile=Environment.GetEnvironmentVariable("ATC_AGOPEN_ROUTE_PREVIEW_TOKEN_FILE")??throw new InvalidOperationException("ROUTE_TOKEN_REQUIRED");
+            var token=File.ReadAllText(tokenFile).Trim();
+            FieldRoutePreviewEndpoint.Register(server,()=>{
+                var scene=sceneProjector.BuildScene(0);var cfg=sceneProjector.BuildConfig();var tick=sceneProjector.BuildTick(0);
+                if(!scene.HasField||scene.Boundaries.Count!=1||scene.Tracks.Count!=1||scene.BoundaryInner.Any(x=>x))throw new InvalidOperationException("ROUTE_GEOMETRY_UNSUPPORTED");
+                var track=scene.Tracks[0];var u=cfg.Uturn;
+                var basis=new AgOpenWeb.Services.PathPlanning.RouteBasis(scene.FieldName,track.Name,scene.OriginLat,scene.OriginLon,
+                    scene.Boundaries[0].Select(p=>new[]{p.E,p.N}).ToArray(),track.Points.Select(p=>new[]{p.E,p.N}).ToArray(),track.Type,
+                    cfg.Tool.TotalWidth,cfg.Tool.Overlap,cfg.Tool.Offset,tick.SkipRows,tick.SkipMode,u.Style,u.Radius,u.DistanceFromBoundary,u.Extension,u.Smoothing,cfg.Vehicle.Wheelbase,cfg.Vehicle.TrackWidth);
+                bool idle=tick.Fix>0&&Math.Abs(tick.Pose.Speed)<=.01&&!tick.IsAutoSteerEngaged&&!tick.IsYouTurnEnabled&&!tick.IsSectionAutoMaster&&!tick.IsSectionManualAll&&!tick.IsContourMode&&tick.Sections.All(x=>x==0)&&tick.ActiveTrackName==track.Name;
+                return new RouteSnapshot(basis,idle);
+            },token);
+        }
 
         // The /ws receive loop's token is linked to the server's shutdown inside
         // SimpleWebServer, so StopAsync cancels connected browsers promptly.
