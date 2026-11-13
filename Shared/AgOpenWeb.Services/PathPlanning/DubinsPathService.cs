@@ -109,6 +109,32 @@ namespace AgOpenWeb.Services.PathPlanning
         private Vec2 startLeftCircle, startRightCircle, goalLeftCircle, goalRightCircle;
 
         //Get all valid Dubins paths sorted from shortest to longest
+        // Preview-only exact arc sampling. Does not change the runtime GeneratePath method.
+        public List<List<Vec3>> GeneratePreviewCandidates(Vec3 start, Vec3 goal)
+        {
+            startPos = new Vec2(start.Easting,start.Northing); goalPos = new Vec2(goal.Easting,goal.Northing);
+            startHeading=start.Heading;goalHeading=goal.Heading;
+            var result=new List<List<Vec3>>();
+            foreach(var candidate in GetAllDubinsPaths()){
+                double e=start.Easting,n=start.Northing,h=start.Heading;var points=new List<Vec3>{start};
+                void Append(double length,bool turn,bool right){
+                    int count=Math.Max(1,(int)Math.Ceiling(length/.5));double ds=length/count;
+                    for(int i=0;i<count;i++){
+                        if(ds<1e-8)continue;
+                        if(turn){double signed=right?1:-1,nh=h+signed*ds/TurningRadius;
+                            e+=(Math.Cos(h)-Math.Cos(nh))*TurningRadius/signed;n+=(Math.Sin(nh)-Math.Sin(h))*TurningRadius/signed;h=nh;
+                        }else {e+=Math.Sin(h)*ds;n+=Math.Cos(h)*ds;}
+                        points.Add(new Vec3(e,n,h));
+                    }
+                }
+                Append(candidate.Length1,true,candidate.Segment1TurningRight);
+                Append(candidate.Length2,candidate.Segment2Turning,candidate.Segment2TurningRight);
+                Append(candidate.Length3,true,candidate.Segment3TurningRight);
+                if(Math.Sqrt((e-goal.Easting)*(e-goal.Easting)+(n-goal.Northing)*(n-goal.Northing))>.001)continue;
+                points[points.Count-1]=goal;result.Add(points);
+            }return result;
+        }
+
         private List<DubinsPathData> GetAllDubinsPaths()
         {
             //Reset the list with all Dubins paths
