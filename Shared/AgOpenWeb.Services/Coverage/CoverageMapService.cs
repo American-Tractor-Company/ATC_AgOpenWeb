@@ -1952,15 +1952,17 @@ public class CoverageMapService : ICoverageMapService
         return any;
     }
 
-    public void LoadFromFile(string fieldDirectory)
+    public void LoadFromFile(string fieldDirectory) => LoadFromFile(fieldDirectory, newerJob: false);
+
+    private void LoadFromFile(string fieldDirectory, bool newerJob)
     {
         string dir = Path.GetFullPath(fieldDirectory);
         var store = new CoverageTileStore(dir);
         bool hasDetectionBits, hasSectionDisplay, fromTiles = false, fromOldFiles = false;
 
-        // A newer build's coverage: shown as none and never saved, so it stays as that build left it.
+        // A newer build's coverage, or job: shown as none and never saved, so it stays as that build left it.
         _newerFormatDirectory = null;
-        if (store.IsNewerFormat)
+        if (newerJob || store.IsNewerFormat)
         {
             ClearAll();
             lock (_coverageLock)
@@ -2179,12 +2181,15 @@ public class CoverageMapService : ICoverageMapService
     public void SaveToFile(string fieldDirectory, string taskName)
     {
         var jobDir = ResolveJobDirectory(fieldDirectory, taskName);
+        if (AgOpenWeb.Services.Fields.JobJsonService.IsNewerFormat(fieldDirectory, taskName))
+            return; // a newer build's job.json: its coverage is that build's too
         Directory.CreateDirectory(jobDir);
         SaveToFile(jobDir);
     }
 
     public void LoadFromFile(string fieldDirectory, string taskName) =>
-        LoadFromFile(ResolveJobDirectory(fieldDirectory, taskName));
+        LoadFromFile(ResolveJobDirectory(fieldDirectory, taskName),
+            AgOpenWeb.Services.Fields.JobJsonService.IsNewerFormat(fieldDirectory, taskName));
 
     private static string ResolveJobDirectory(string fieldDirectory, string taskName)
     {
