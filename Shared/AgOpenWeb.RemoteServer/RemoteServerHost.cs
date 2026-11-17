@@ -480,12 +480,14 @@ public sealed class RemoteServerHost
 
         // Screenshots and files added to a report (the body is the file). Only the screen
         // holding control may change a report, like every other change (observers change
-        // nothing, #397); the client sends its connection id. The files stay in the dump.
+        // nothing, #397); the client sends its connection id and the secret its Hello frame
+        // carried (the id alone is broadcast to every screen). The files stay in the dump.
+        var hub = _ws;
         server.MapPost("/bugreports/attach", (int)AgOpenWeb.Services.BugReport.BugReportAttachments.MaxFileBytes + 1024,
-            req => Task.FromResult(ChangeReport(req, authority, (path, name) =>
+            req => Task.FromResult(ChangeReport(req, hub.HoldsFreshControl, (path, name) =>
                 AgOpenWeb.Services.BugReport.BugReportAttachments.Add(path, name, req.Body))));
         server.MapPost("/bugreports/detach", 0,
-            req => Task.FromResult(ChangeReport(req, authority, (path, name) =>
+            req => Task.FromResult(ChangeReport(req, hub.HoldsFreshControl, (path, name) =>
                 (AgOpenWeb.Services.BugReport.BugReportAttachments.Refusal.None,
                  AgOpenWeb.Services.BugReport.BugReportAttachments.Remove(path, name)))));
 
@@ -505,14 +507,14 @@ public sealed class RemoteServerHost
         return File.Exists(path) ? path : null;
     }
 
-    // POST /bugreports/attach|detach?zip=&name=&client=: gate on control, run the change,
+    // POST /bugreports/attach|detach?zip=&name=&client=&secret=: gate on control, run the change,
     // reply {refusal, files:[{name,size}]}. A dump being read by Send at that moment is "busy".
-    private static SimpleWebServer.Response ChangeReport(SimpleWebServer.PostRequest req, ControlAuthority authority,
+    internal static SimpleWebServer.Response ChangeReport(SimpleWebServer.PostRequest req, Func<Guid, string, bool> holdsControl,
         Func<string, string, (AgOpenWeb.Services.BugReport.BugReportAttachments.Refusal,
             IReadOnlyList<AgOpenWeb.Services.BugReport.BugReportAttachments.Attachment>)> change)
     {
         string Q(string k) => req.Query.TryGetValue(k, out var v) ? v : "";
-        if (!Guid.TryParse(Q("client"), out var client) || !authority.HoldsFresh(client))
+        if (!Guid.TryParse(Q("client"), out var client) || !holdsControl(client, Q("secret")))
             return new SimpleWebServer.Response(403, "text/plain", "view only"u8.ToArray());
         var path = BugReportZip(Q("zip"));
         if (path is null || Q("name").Length == 0) return SimpleWebServer.Response.NotFound;

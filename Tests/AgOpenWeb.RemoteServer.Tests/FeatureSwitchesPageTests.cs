@@ -19,9 +19,10 @@ public class FeatureSwitchesPageTests
     [Test]
     public void Hello_carries_the_features_after_the_client_id()
     {
-        var f = WireCodec.EncodeHello("abc", SwitchedFeature.WebCards | SwitchedFeature.AgShare);
-        Assert.That(f[^1], Is.EqualTo(6), "the last byte: web cards 2 + AgShare 4");
-        Assert.That(WireCodec.EncodeHello("abc", SwitchedFeature.None)[^1], Is.Zero);
+        // type, i32 length + "abc", then the feature byte.
+        var f = WireCodec.EncodeHello("abc", SwitchedFeature.WebCards | SwitchedFeature.AgShare, "s");
+        Assert.That(f[8], Is.EqualTo(6), "web cards 2 + AgShare 4");
+        Assert.That(WireCodec.EncodeHello("abc", SwitchedFeature.None, "s")[8], Is.Zero);
     }
 
     [Test]

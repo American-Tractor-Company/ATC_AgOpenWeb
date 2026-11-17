@@ -37,6 +37,11 @@ public sealed class WebSocketHub
     private sealed class Client
     {
         public required WebSocket Socket { get; init; }
+        /// <summary>Sent to this client alone (its Hello frame): what proves a request over
+        /// HTTP comes from this connection. The connection id is broadcast to every screen
+        /// (ControlState names the holder), so it proves nothing.</summary>
+        public string Secret { get; } = Convert.ToHexString(
+            System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
         public Channel<byte[]> Out { get; } = Channel.CreateUnbounded<byte[]>(
             new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
         public long QueuedBytes;
@@ -110,6 +115,18 @@ public sealed class WebSocketHub
 
     public int ClientCount => _clients.Count;
 
+    /// <summary>True when <paramref name="secret"/> is the one sent to connection
+    /// <paramref name="conn"/> in its Hello frame and that connection holds fresh control:
+    /// the gate for the HTTP routes that change something (a screen's id alone is public).</summary>
+    public bool HoldsFreshControl(Guid conn, string secret)
+    {
+        if (!_clients.TryGetValue(conn, out var c) || string.IsNullOrEmpty(secret)) return false;
+        var expected = System.Text.Encoding.ASCII.GetBytes(c.Secret);
+        var given = System.Text.Encoding.UTF8.GetBytes(secret);
+        return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(expected, given)
+            && _authority.HoldsFresh(conn);
+    }
+
     /// <summary>Owns the socket for its lifetime: seed, then drain until close.</summary>
     public async Task HandleAsync(WebSocket socket, CancellationToken ct)
     {
@@ -120,10 +137,10 @@ public sealed class WebSocketHub
         try
         {
             // Tell the client its id first (so it can recognise itself as the
-            // controller), then claim control. Control is implicit and by connection
+            // controller) and its secret (for the HTTP routes), then claim control. Control is implicit and by connection
             // order: the first client to connect becomes the controller; Acquire is
             // denied for later clients (they observe). No take-over.
-            Write(client, WireCodec.EncodeHello(id.ToString(), AgOpenWeb.Models.FeatureSwitches.Enabled));
+            Write(client, WireCodec.EncodeHello(id.ToString(), AgOpenWeb.Models.FeatureSwitches.Enabled, client.Secret));
             _authority.Acquire(id, "Browser");
             try
             {

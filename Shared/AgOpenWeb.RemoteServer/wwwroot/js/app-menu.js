@@ -195,7 +195,7 @@ function renderBrFiles() {
 }
 async function brChangeFiles(op, name, body) {
   const st = document.getElementById('br-attachstatus');
-  const q = new URLSearchParams({ zip: brFile, name, client: myClientId || '' });
+  const q = new URLSearchParams({ zip: brFile, name, client: myClientId || '', secret: myClientSecret });
   let res, reply = null;
   try {
     res = await fetch('/bugreports/' + op + '?' + q, { method: 'POST', body });

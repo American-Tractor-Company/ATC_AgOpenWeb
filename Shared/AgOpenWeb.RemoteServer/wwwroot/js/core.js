@@ -116,6 +116,7 @@ let linkRttMs = null;  // EMA of server↔client round-trip (ms), from diag.ping
 // Control authority (#397): our connection id (from the
 // Hello frame), the latest broadcast control state, and whether we hold control.
 let myClientId = null;
+let myClientSecret = '';  // from the Hello frame, sent to this screen alone: the HTTP routes' proof
 let lastControl = { held: false, holderId: '', holderName: '' };
 let iHoldControl = false;
 
@@ -462,14 +463,14 @@ const transport = RemoteTransport.create({
     if (document.getElementById('boundaryplayer').classList.contains('open')) renderBoundaryPlayer();
   },
   onWizard(w) { wizard = w; wizardDirty = true; },
-  onHello(id, features) {
+  onHello(id, features, secret) {
     // The switchable features this host runs (SwitchedFeature bits): the rest stay
     // hidden (the fs-no-* classes on the body, css/base.css).
     document.body.classList.toggle('fs-no-vt', !(features & 1));
     document.body.classList.toggle('fs-no-webcards', !(features & 2));
     document.body.classList.toggle('fs-no-agshare', !(features & 4));
     if (features & 2) WebCards.enable();
-    myClientId = id; updateControlUi(); claimSeatIfFree(); Vt.render(); WebCards.render();
+    myClientId = id; myClientSecret = secret || ''; updateControlUi(); claimSeatIfFree(); Vt.render(); WebCards.render();
   },
   onControlState(s) { lastControl = s; updateControlUi(); claimSeatIfFree(); Vt.render(); WebCards.render(); },
   onWebCards(list) { WebCards.setBookmarks(list); },
