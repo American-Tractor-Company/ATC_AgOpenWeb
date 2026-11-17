@@ -97,7 +97,9 @@ public static partial class RemoteServerWiring
             case "conn.autoSteerConfigured": con.IsAutoSteerConfigured = B(); cfg.SaveAppSettings(); return;
             case "conn.machineConfigured": con.IsMachineConfigured = B(); cfg.SaveAppSettings(); return;
             // --- AgShare cloud settings (ConfigStore.Connections). Persist on change. ---
-            case "conn.agShareServer": con.AgShareServer = val; cfg.SaveAppSettings(); return;
+            case "conn.agShareServer": // the stored key belongs to its server: a new server gets none
+                con.AgShareApiKey = AgOpenWeb.Services.AgShare.AgShareServer.KeyFor(con.AgShareServer, val, con.AgShareApiKey);
+                con.AgShareServer = val; cfg.SaveAppSettings(); return;
             case "conn.agShareApiKey": // the mask = unchanged (the client never has the key)
                 if (val == AgOpenWeb.RemoteServer.Secrets.Mask) return;
                 con.AgShareApiKey = val; cfg.SaveAppSettings(); return;
