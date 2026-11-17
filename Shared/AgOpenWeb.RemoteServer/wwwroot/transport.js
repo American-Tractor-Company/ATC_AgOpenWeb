@@ -17,7 +17,7 @@ window.RemoteTransport = {
    *           onCoverageInit?: (init:object)=>void,
    *           onCoverageCells?: (cells:object)=>void,
    *           onStatusBar?:(status:object)=>void,
-   *           onHello?:(clientId:string, features:number)=>void,
+   *           onHello?:(clientId:string, features:number, secret:string)=>void,
    *           onControlState?:(state:object)=>void,
    *           onSound?:(effectId:number)=>void,
    *           onFrame?:()=>void,
@@ -338,7 +338,8 @@ window.RemoteTransport = {
         }
         case TYPE.HELLO: {
           const clientId = str(), features = u8(); // features: SwitchedFeature bits (VT 1, web cards 2, AgShare 4)
-          handlers.onHello && handlers.onHello(clientId, features);
+          const secret = str(); // this connection's alone: proves an HTTP request comes from this screen
+          handlers.onHello && handlers.onHello(clientId, features, secret);
           break;
         }
         case TYPE.CONFIG: {

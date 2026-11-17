@@ -164,6 +164,60 @@ public class WebSocketHubTests
         await tabletTask;
     }
 
+    /// <summary>The Hello frame a screen was sent: its id and its secret.</summary>
+    private static (Guid Id, string Secret) HelloOf(FakeSocket s)
+    {
+        var f = s.Received.First(b => b.Length > 0 && b[0] == 7);
+        int idLen = BitConverter.ToInt32(f, 1);
+        var id = Guid.Parse(System.Text.Encoding.UTF8.GetString(f, 5, idLen));
+        int at = 5 + idLen + 1;
+        int secretLen = BitConverter.ToInt32(f, at);
+        return (id, System.Text.Encoding.UTF8.GetString(f, at + 4, secretLen));
+    }
+
+    [Test]
+    public async Task An_observer_with_the_broadcast_holder_id_cannot_change_a_bug_report()
+    {
+        var authority = new ControlAuthority();
+        var hub = new WebSocketHub(authority);
+        var tablet = new FakeSocket();
+        var tabletTask = hub.HandleAsync(tablet, CancellationToken.None);
+        await Until(() => hub.ClientCount == 1 && tablet.Received.Any(b => b.Length > 0 && b[0] == 7));
+        var phone = new FakeSocket();
+        var phoneTask = hub.HandleAsync(phone, CancellationToken.None);
+        await Until(() => hub.ClientCount == 2 && phone.Received.Any(b => b.Length > 0 && b[0] == 7));
+
+        var holder = HelloOf(tablet);
+        var observer = HelloOf(phone);
+        var broadcastId = authority.Snapshot().HolderId;
+        Assert.That(broadcastId, Is.EqualTo(holder.Id.ToString()), "every screen is told the holder's id");
+        Assert.That(observer.Secret, Is.Not.EqualTo(holder.Secret));
+        Assert.That(holder.Secret, Has.Length.GreaterThanOrEqualTo(32));
+
+        Assert.That(hub.HoldsFreshControl(holder.Id, holder.Secret), Is.True);
+        Assert.That(hub.HoldsFreshControl(holder.Id, ""), Is.False);
+        Assert.That(hub.HoldsFreshControl(holder.Id, observer.Secret), Is.False);
+        Assert.That(hub.HoldsFreshControl(holder.Id, broadcastId), Is.False);
+        Assert.That(hub.HoldsFreshControl(observer.Id, observer.Secret), Is.False, "the observer holds no control");
+
+        SimpleWebServer.PostRequest Post(string client, string secret) => new(new Dictionary<string, string>
+        {
+            ["client"] = client, ["secret"] = secret, ["zip"] = "bugreport_x.zip", ["name"] = "a.png",
+        }, new byte[] { 1 });
+        bool changed = false;
+        var res = RemoteServerHost.ChangeReport(Post(broadcastId, ""), hub.HoldsFreshControl,
+            (_, _) => { changed = true; return default; });
+        Assert.That(res.Status, Is.EqualTo(403), "the broadcast id alone is no proof of control");
+        res = RemoteServerHost.ChangeReport(Post(broadcastId, observer.Secret), hub.HoldsFreshControl,
+            (_, _) => { changed = true; return default; });
+        Assert.That(res.Status, Is.EqualTo(403));
+        Assert.That(changed, Is.False);
+
+        tablet.Leave(); phone.Leave();
+        await Task.WhenAll(tabletTask, phoneTask);
+        Assert.That(hub.HoldsFreshControl(holder.Id, holder.Secret), Is.False, "a secret ends with its connection");
+    }
+
     /// <summary>A socket that sends the given text commands, then closes.</summary>
     private sealed class ScriptedSocket(params string[] commands) : WebSocket
     {

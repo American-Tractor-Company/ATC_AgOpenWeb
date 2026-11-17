@@ -911,14 +911,16 @@ public static class WireCodec
 
     // Sent once per connection so the client learns its own id (to compare against
     // ControlState.HolderId and know whether it holds actuation authority), then the features
-    // this host runs of those that can be switched off (SwitchedFeature bits: the page shows only these).
-    public static byte[] EncodeHello(string clientId, AgOpenWeb.Models.SwitchedFeature features)
+    // this host runs of those that can be switched off (SwitchedFeature bits: the page shows only these),
+    // then the connection's secret: sent to it alone, it proves an HTTP request comes from this screen.
+    public static byte[] EncodeHello(string clientId, AgOpenWeb.Models.SwitchedFeature features, string secret)
     {
         using var ms = new MemoryStream();
         using var w = new BinaryWriter(ms);
         w.Write(Hello);
         WriteStr(w, clientId);
         w.Write((byte)features);
+        WriteStr(w, secret);
         return ms.ToArray();
     }
 
