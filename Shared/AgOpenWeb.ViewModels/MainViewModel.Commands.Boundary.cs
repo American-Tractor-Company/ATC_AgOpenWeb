@@ -182,8 +182,12 @@ public partial class MainViewModel
         ConfirmAgShareSettingsDialogCommand = new RelayCommand(() =>
         {
             // Write through the store, then persist store→DTO→disk. No DTO bypass.
+            // The stored key goes only to the server it was entered for.
+            var key = AgShareSettingsApiKey;
+            if (key == ConfigStore.Connections.AgShareApiKey)
+                key = AgOpenWeb.Services.AgShare.AgShareServer.KeyFor(ConfigStore.Connections.AgShareServer, AgShareSettingsServerUrl, key);
             ConfigStore.Connections.AgShareServer = AgShareSettingsServerUrl;
-            ConfigStore.Connections.AgShareApiKey = AgShareSettingsApiKey;
+            ConfigStore.Connections.AgShareApiKey = key;
             ConfigStore.Connections.AgShareEnabled = AgShareSettingsEnabled;
             _configurationService.SaveAppSettings();
             State.UI.CloseDialog();

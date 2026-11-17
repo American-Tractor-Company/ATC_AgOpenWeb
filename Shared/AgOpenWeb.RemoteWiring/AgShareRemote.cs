@@ -35,7 +35,7 @@ internal static class AgShareRemote
         ConfigurationStore config, ISettingsService settings)
     {
         var c = config.Connections;
-        var url = string.IsNullOrEmpty(c.AgShareServer) ? "https://agshare.agopengps.com" : c.AgShareServer;
+        var url = AgShareServer.Effective(c.AgShareServer);
         var key = c.AgShareApiKey ?? "";
         var root = settings.Settings.FieldsDirectory;
         if (string.IsNullOrWhiteSpace(root))
