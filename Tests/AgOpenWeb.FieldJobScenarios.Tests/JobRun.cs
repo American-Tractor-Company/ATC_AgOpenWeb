@@ -56,6 +56,10 @@ public sealed record JobSpec(
     /// <summary>When an <see cref="Expected"/> code is the operator's doing only up to a size (a
     /// 50 cm nudge leaves a 50 cm strip, not a wider one): false = report it as a finding after all.</summary>
     public Func<string, JobAreas, bool>? ExpectedWhen { get; init; }
+    /// <summary>An <c>END-OF-FIELD-FIELD-LEFT</c> stop this job is expected to make (the field's shape
+    /// with the order it is worked in, not something AgOpenWeb does wrong): noted, not counted, when
+    /// the operator was told <see cref="ExpectedStop.Says"/>; another stop is still a finding.</summary>
+    public ExpectedStop? ExpectedStop { get; init; }
     /// <summary>How the operator guides the job: the AB line named in <see cref="Track"/> (the
     /// default), or a curve, a closed loop, a water pivot, contour or a recorded path
     /// (<see cref="PathOperator"/>).</summary>
@@ -178,6 +182,8 @@ public sealed class JobRun : IAsyncDisposable
     public Func<(double E, double N), bool>? LeftOnPurpose;
     /// <summary>Unsprayed ground at a lap's corner, where the passes pull apart.</summary>
     public Func<(double E, double N), bool>? AtCorner;
+    /// <summary>Ground where the operator moved a width in by hand to the next lap (the contour laps).</summary>
+    public Func<(double E, double N), bool>? AtLapChange;
     private bool _passJoined;
     private int _passStartFix;
     private int _passErrorTraced = -1000;
@@ -251,7 +257,7 @@ public sealed class JobRun : IAsyncDisposable
     /// <summary>AgOpenWeb's warning to take over "at the end of the field" (when it was said, its text,
     /// the pass): the operator drives the pass to its end first and takes over there.</summary>
     private (double At, string Text, int Pass)? _takeOverAtEnd;
-    // After "no room on the next pass at this end": the implement left the cultivated area, then
+    // After "no room on the next pass" (IsNoRoom): the implement left the cultivated area, then
     // came back into it on the same pass (a headland gap the pass crosses; field job J10).
     private bool _noRoomLeftWork, _noRoomCrossedGap;
     bool _arrowChecked;
@@ -260,6 +266,23 @@ public sealed class JobRun : IAsyncDisposable
     public (int Pass, double ChordM)? ArrowAtEdge;
     public readonly List<TurnRecord> Turns = new();
     public readonly List<string> Said = new();
+    /// <summary>Metres driven with AutoSteer on since the last U-turn ended or AutoSteer came on
+    /// (0 while a turn is driven or AutoSteer is off): how much of its pass AgOpenWeb had to plan
+    /// the next turn on.</summary>
+    public double LegM;
+    /// <summary>AgOpenWeb's warnings that a U-turn can't be made from here ("U-turn missed",
+    /// "No U-turn can be made"), each with <see cref="LegM"/> when it was heard.</summary>
+    public readonly List<(string Text, double LegM)> TurnWarnings = new();
+    /// <summary>AgOpenWeb's "no room on the next pass at this end": the field goes on, but no turn
+    /// can land on the next pass here; the operator drives this pass to its end and takes over.
+    /// Said with the reason since 2026-11-16 ("No U-turn onto the next pass: ..."), before that as
+    /// "End of field reached - no room on the next pass at this end" (an older build, the update harness).</summary>
+    public static bool IsNoRoom(string text) =>
+        text.Contains("No U-turn onto the next pass", StringComparison.Ordinal)
+        || text.Contains("no room on the next pass at this end", StringComparison.Ordinal);
+
+    public static bool IsTurnWarning(string text) =>
+        text.Contains("U-turn missed", StringComparison.Ordinal) || text.Contains("No U-turn can be made", StringComparison.Ordinal);
     public readonly List<string> Problems = new();
     public readonly List<string> Notes = new();
     /// <summary>"End of field reached" said by AgOpenWeb, then a U-turn it made after all: when and where.</summary>
@@ -268,10 +291,11 @@ public sealed class JobRun : IAsyncDisposable
     private int _endSaidPass;
     public int Reengaged;
     public readonly double[] ScreenOnValveShut = new double[64], ScreenOffValveOpen = new double[64];
-    /// <summary>Disagreement that lasted more than a second at a stretch (the switching latency
-    /// of a few fixes at each change is not a fault).</summary>
-    public readonly double[] PersistentDisagreement = new double[64];
-    private readonly int[] _disagreeRun = new int[64];
+    /// <summary>The valves against the screen: disagreement that lasted more than a second at a
+    /// stretch (the switching latency of a few fixes at each change is not a fault), apart where
+    /// the module missed frames (<see cref="ValveFollowTally"/>).</summary>
+    public readonly ValveFollowTally Valves = new();
+    public double[] PersistentDisagreement => Valves.Persistent;
     private readonly (double E, double N)?[] _prevAppEdge = new (double E, double N)?[65];
     public double SecondsLinkDown, SecondsPaintingLinkDown;
     /// <summary>AgOpenWeb's tool position against the real implement's centre, on the passes
@@ -297,6 +321,18 @@ public sealed class JobRun : IAsyncDisposable
         }
     }
     private readonly Dictionary<int, SortedDictionary<int, (double L, double R)>> _passEdges = new();
+    // Where each stretch of a pass's edges began after a U-turn or the engage (the bin along the
+    // line; not after a lap's corner or a lap change by hand, which keep their own rules): after a U-turn hands
+    // back, or AutoSteer is engaged, the implement is still settling onto its pass for a few metres
+    // (a trailed or front-mounted one longer, a manual turn landing in the crop at an angle).
+    private readonly Dictionary<int, List<int>> _runStarts = new();
+    private int _recPass = int.MinValue;
+    private bool _settling = true;   // the engage, or a U-turn since the last edges: the next stretch starts settling
+    /// <summary>Metres from where a pass's edges begin within which the implement is still settling
+    /// after the turn: a strip there is a wedge at the pass's start, not a strip along the pass. The
+    /// landing length AgOpenWeb asks of the next pass (20 m); a manual U-turn landing in the crop at
+    /// 26° settles over about 17 m (T11).</summary>
+    public const double SettlingM = 20;
     /// <summary>The passes driven: from the lowest to the highest pass number recorded.</summary>
     public int PassesDriven => _passEdges.Count == 0 ? 1 : _passEdges.Keys.Max() - _passEdges.Keys.Min() + 1;
     private readonly (double E, double N)?[] _prevEdge = new (double E, double N)?[65];
@@ -643,7 +679,14 @@ public sealed class JobRun : IAsyncDisposable
             Module.TickNow(); Module.TickNow();   // the module's 50 ms loop, twice per 100 ms fix
             _pivotHistory[Fix % _pivotHistory.Length] = (Truth.E, Truth.N);
             if (GpsOn) SendFix();
+            bool onlineBefore = Module.IsOnline;
+            int before239 = Module.Count(239);
             for (int t = 0; t < 10; t++) { SimTime?.AdvanceMs(10); Rig.TickLoop(1); SweepMapping(); }   // the 100 Hz section/steer loop, in simulated time
+            // The module hears the app over real UDP on its own thread while the harness runs in
+            // simulated time, faster than the clock: give the frames of this fix a moment to arrive,
+            // then count what never did (a busy runner drops them; the 2026-11-14 nightly lost 4.5 %).
+            int got = WaitForFrames(before239, 10);
+            Valves.BeginFix(10, onlineBefore && Module.IsOnline ? got : null);
             var c = Rig.LastCycle;
             if (c != null && Fix > _pivotHistory.Length && !InTurn)
             {
@@ -666,6 +709,7 @@ public sealed class JobRun : IAsyncDisposable
                 if (HandSteer != null) cmd = HandSteer();
                 var yt = c.YouTurn;
                 bool executing = yt?.IsExecuting == true;
+                LegM = engaged && !executing ? LegM + Math.Abs(Truth.SpeedKmh) / 3.6 * FixSeconds : 0;
                 if (executing && !wasExecuting)
                 {
                     // AgOpenWeb said the field was done, then turned onto another pass after all (the
@@ -680,7 +724,7 @@ public sealed class JobRun : IAsyncDisposable
                     // turn and goes on; the message was early all the same.
                     // When the pass crossed a headland gap since, the message was for the end at the
                     // gap and this turn is at the next one: not early.
-                    if (_takeOverAtEnd is { } nr && TookOverAt < 0 && nr.Text.Contains("no room on the next pass at this end", StringComparison.Ordinal))
+                    if (_takeOverAtEnd is { } nr && TookOverAt < 0 && IsNoRoom(nr.Text))
                     {
                         if (_noRoomCrossedGap)
                             Did(F($"AgOpenWeb's \"no room at this end\" at {nr.At:0} s was for a headland gap on pass {nr.Pass}: the operator drove across it and AgOpenWeb made U-turn {TurnsStarted + 1} at the next end"));
@@ -851,11 +895,11 @@ public sealed class JobRun : IAsyncDisposable
                     Said.Add(F($"{Seconds:0.0} s: {e}"));
                     // AgOpenWeb says it only while it plans a turn, never during one: read once a second,
                     // a message from just before a turn started is stale and is not the end.
-                    // "End of field reached - no room on the next pass at this end": the field goes on
+                    // "No U-turn onto the next pass: ... - take over manually at the end of this pass" (IsNoRoom): the field goes on
                     // beyond, but no turn can reach it from here (a narrowing lobe, a corner pass). Not
                     // the end of the field: the operator drives the pass to its end and takes over,
                     // as for the warning below (field job J3).
-                    bool noRoomHere = e.Contains("no room on the next pass at this end", StringComparison.Ordinal);
+                    bool noRoomHere = IsNoRoom(e);
                     if (noRoomHere && !wasExecuting && TookOverAt < 0 && _takeOverAtEnd == null)
                     {
                         _takeOverAtEnd = (Seconds, e, Pass);
@@ -867,8 +911,8 @@ public sealed class JobRun : IAsyncDisposable
                         FieldDone = true;
                     }
                     // AgOpenWeb refused the turn (#698, #716: "No U-turn fits", "U-turn blocked") or
-                    // missed it ("U-turn missed: ...", or "No U-turn can be made from the headland on
-                    // this pass", #761: AutoSteer came on again in the headland past where a turn could
+                    // missed it ("U-turn missed: ...", or "No U-turn can be made this close to the
+                    // boundary on this pass", #761: AutoSteer came on again in the headland past where a turn could
                     // start, #740 T10, or the pass runs along the headland strip) and said so: the
                     // operator takes over and the job stops, as a farmer would, instead of riding on with
                     // AutoSteer out of the field. A warning for "the end of the field" comes mid-pass:
@@ -876,7 +920,7 @@ public sealed class JobRun : IAsyncDisposable
                     // warning is AgOpenGPS behaviour too (leaving the field does not switch AutoSteer
                     // off, #494); RAN-OFF is for a run-off with no such warning. The ground left from
                     // there is the consequence (EndedEarly), reported once through the warning's own finding.
-                    if (TookOverAt < 0 && _takeOverAtEnd == null && e.Contains("take over manually", StringComparison.OrdinalIgnoreCase))
+                    if (TookOverAt < 0 && _takeOverAtEnd == null && !noRoomHere && e.Contains("take over manually", StringComparison.OrdinalIgnoreCase))
                     {
                         if (e.Contains("at the end of the field", StringComparison.OrdinalIgnoreCase))
                         {
@@ -889,7 +933,7 @@ public sealed class JobRun : IAsyncDisposable
             }
             var tc = ToolCentre();
             bool inWork = Ring.Inside((tc.E, tc.N), Work ?? Outer);
-            if (_takeOverAtEnd is { } nrg && nrg.Text.Contains("no room on the next pass at this end", StringComparison.Ordinal) && !InTurn)
+            if (_takeOverAtEnd is { } nrg && IsNoRoom(nrg.Text) && !InTurn)
             {
                 if (!inWork) _noRoomLeftWork = true;
                 else if (_noRoomLeftWork) _noRoomCrossedGap = true;
@@ -948,7 +992,7 @@ public sealed class JobRun : IAsyncDisposable
         TookOverAt = Seconds;
         bool missed = e.Contains("U-turn missed", StringComparison.Ordinal) || e.Contains("No U-turn can be made", StringComparison.Ordinal);
         bool blocked = e.Contains("U-turn blocked", StringComparison.Ordinal);
-        bool noRoom = e.Contains("no room on the next pass at this end", StringComparison.Ordinal);
+        bool noRoom = IsNoRoom(e);
         string what = missed ? "missed" : blocked ? "blocked" : "refused";
         Problems.Add(noRoom
             ? F($"{warnedAt:0.0} s: AgOpenWeb had no room for a U-turn at the end of pass {pass}, with the field going on beyond (\"{e}\")")
@@ -989,6 +1033,18 @@ public sealed class JobRun : IAsyncDisposable
         return (worst, pivot);
     }
 
+    /// <summary>Wait up to 5 ms of wall time for the module to have <paramref name="sent"/> more
+    /// PGN 239 frames than <paramref name="before"/>; the number it got.</summary>
+    private int WaitForFrames(int before, int sent)
+    {
+        long until = System.Diagnostics.Stopwatch.GetTimestamp() + System.Diagnostics.Stopwatch.Frequency / 200;
+        var spin = new SpinWait();
+        int got;
+        while ((got = Module.Count(239) - before) < sent && System.Diagnostics.Stopwatch.GetTimestamp() < until)
+            spin.SpinOnce();
+        return got;
+    }
+
     private void Sweep(GpsCycleResult c, ulong prevOpen)
     {
         var tc = Truth.ToolCentre;
@@ -1022,8 +1078,7 @@ public sealed class JobRun : IAsyncDisposable
             bool screen = s < live.Count && live[s].IsOn;
             if (screen && !valve) { ScreenOnValveShut[s] += FixSeconds; if (!link) SecondsPaintingLinkDown += FixSeconds / n; }
             if (!screen && valve) ScreenOffValveOpen[s] += FixSeconds;
-            if (screen != valve) { if (++_disagreeRun[s] > 10) PersistentDisagreement[s] += FixSeconds; }
-            else _disagreeRun[s] = 0;
+            Valves.Section(s, screen, valve, FixSeconds);
             bool flowing = ((spray >> s) & 1) != 0;
             if (flowing && _prevEdge[s] is { } p0 && _prevEdge[s + 1] is { } p1)
                 Grid.Sweep(p0, p1, cur[s], cur[s + 1]);
@@ -1054,9 +1109,18 @@ public sealed class JobRun : IAsyncDisposable
         {
             if (!_passEdges.TryGetValue(Pass, out var d)) _passEdges[Pass] = d = new SortedDictionary<int, (double, double)>();
             int bin = (int)Math.Floor(Vv((tc.E, tc.N)));
+            if (_recPass != Pass && _settling)
+            {
+                if (!_runStarts.TryGetValue(Pass, out var starts)) _runStarts[Pass] = starts = new List<int>();
+                starts.Add(bin);
+            }
+            _recPass = Pass;
+            _settling = false;
             if (d.TryGetValue(bin, out var old)) d[bin] = (Math.Min(old.L, uL), Math.Max(old.R, uR));
             else d[bin] = (uL, uR);
         }
+        else _recPass = int.MinValue;
+        if (InTurn) _settling = true;
         Track.Add((Truth.E, Truth.N, InTurn || InChange || HandSteer != null, open != 0));
     }
 
@@ -1139,6 +1203,8 @@ public sealed class JobRun : IAsyncDisposable
                 || (e.Kind == RigEventKind.Status && !e.Text.Contains("Section", StringComparison.OrdinalIgnoreCase))
                 || (e.Kind == RigEventKind.Warning && !e.Text.Contains("No GPS input", StringComparison.Ordinal)))
                 said.Add(e.ToString());
+        foreach (var e in said)
+            if (IsTurnWarning(e)) TurnWarnings.Add((F($"{Seconds:0.0} s: {e}"), LegM));
         return said;
     }
 
@@ -1199,6 +1265,9 @@ public sealed class JobRun : IAsyncDisposable
                     // The laps' corners first: a lap rounds a corner of the boundary and cannot reach
                     // into it, whatever the sections do (near the fence too).
                     else if (AtCorner?.Invoke(c) == true) a.MissedAtCorners += cell;
+                    // Where the operator moved a width in by hand between laps: the implement crosses
+                    // from one lap to the next, and what it leaves is the operator's lap change.
+                    else if (AtLapChange?.Invoke(c) == true) a.MissedAtLapChange += cell;
                     // No headland (the lap jobs): the edge of the field along the boundary.
                     else if (Work == null && Ring.DistToRing(c, Outer) < 1.5) a.MissedAlongBoundary += cell;
                     else if (LeftOnPurpose?.Invoke(c) == true) a.MissedLeftInMiddle += cell;
@@ -1257,14 +1326,33 @@ public sealed class JobRun : IAsyncDisposable
                 if (!passes[k + 1].Value.TryGetValue(bin, out var x2)) continue;
                 if (x.R - x.L < Spec.T.Width - 0.3 || x2.R - x2.L < Spec.T.Width - 0.3) continue;   // a section still off at the pass's end
                 double gap = x2.L - x.R;
+                if (Settling(passes[k].Key, bin) || Settling(passes[k + 1].Key, bin))
+                {
+                    if (gap > a.LargestSettlingStripM)
+                    {
+                        var at = Frame.At((x.R + x2.L) / 2, bin);
+                        a.LargestSettlingStripM = gap;
+                        a.LargestSettlingWhere = F($"between passes {passes[k].Key} and {passes[k + 1].Key}, {bin} m along the line from A, at ({at.E:0},{at.N:0})");
+                    }
+                    a.LargestOverlapM = Math.Max(a.LargestOverlapM, -gap);
+                    continue;
+                }
                 if (gap > a.LargestMissedStripM)
-                    a.LargestStripWhere = F($"between passes {passes[k].Key} and {passes[k + 1].Key}, {bin} m along the line from A");
+                {
+                    var at = Frame.At((x.R + x2.L) / 2, bin);
+                    a.LargestStripWhere = F($"between passes {passes[k].Key} and {passes[k + 1].Key}, {bin} m along the line from A, at ({at.E:0},{at.N:0})");
+                }
                 a.LargestMissedStripM = Math.Max(a.LargestMissedStripM, gap);
                 a.LargestOverlapM = Math.Max(a.LargestOverlapM, -gap);
             }
         }
         return a;
     }
+
+    /// <summary>Is this bin of a pass within <see cref="SettlingM"/> of where a stretch of its
+    /// edges began (the implement settling onto the pass after a turn or the engage)?</summary>
+    private bool Settling(int pass, int bin) =>
+        _runStarts.TryGetValue(pass, out var starts) && starts.Any(b => Math.Abs(bin - b) < SettlingM);
 
     /// <summary>Are two passes, next to each other in the order across the field, neighbours? A pass
     /// with no edges recorded (its only stretch in the cultivated area under a U-turn's start, J6's
@@ -1332,3 +1420,7 @@ public sealed class JobRun : IAsyncDisposable
         }
     }
 }
+
+/// <summary>A stop for want of room on the next pass that a job is expected to make
+/// (<see cref="JobSpec.ExpectedStop"/>): what AgOpenWeb says, and why the stop is right there.</summary>
+public sealed record ExpectedStop(string Says, string Why);

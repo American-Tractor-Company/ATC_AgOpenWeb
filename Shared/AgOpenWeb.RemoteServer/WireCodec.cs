@@ -347,6 +347,8 @@ public static class WireCodec
         w.Write(v.Type);               // i32
         w.Write(v.HitchType);          // i32
         w.Write(v.HitchLength);        // f64
+        w.Write(v.ThreePointHitchLength);
+        w.Write(v.FrontHitchLength);
         w.Write(v.Wheelbase);
         w.Write(v.TrackWidth);
         w.Write(v.AntennaPivot);
@@ -375,7 +377,7 @@ public static class WireCodec
         var t = c.Tool;
         w.Write(t.Type);               // i32
         w.Write(t.HitchType);
-        w.Write(t.HitchLength);        // f64
+        w.Write(t.WorkingPointFromHitch); // f64
         w.Write(t.TrailingHitchLength);
         w.Write(t.TankTrailingHitchLength);
         w.Write(t.Length);
@@ -908,13 +910,15 @@ public static class WireCodec
     }
 
     // Sent once per connection so the client learns its own id (to compare against
-    // ControlState.HolderId and know whether it holds actuation authority).
-    public static byte[] EncodeHello(string clientId)
+    // ControlState.HolderId and know whether it holds actuation authority), then the features
+    // this host runs of those that can be switched off (SwitchedFeature bits: the page shows only these).
+    public static byte[] EncodeHello(string clientId, AgOpenWeb.Models.SwitchedFeature features)
     {
         using var ms = new MemoryStream();
         using var w = new BinaryWriter(ms);
         w.Write(Hello);
         WriteStr(w, clientId);
+        w.Write((byte)features);
         return ms.ToArray();
     }
 
