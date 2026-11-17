@@ -35,4 +35,37 @@ public class AgShareServerTests
         Assert.That(AgShareServer.Effective("  "), Is.EqualTo(AgShareServer.Default));
         Assert.That(AgShareServer.Effective(" https://my.agshare.lan/ "), Is.EqualTo("https://my.agshare.lan"));
     }
+
+    [TestCase("")]
+    [TestCase("https://agshare.agopengps.com")]
+    [TestCase("https://my.agshare.example:8443/")]
+    [TestCase("http://localhost:5000")]
+    [TestCase("http://127.0.0.1")]
+    [TestCase("http://[::1]:8080")]
+    [TestCase("http://192.168.1.20")]
+    [TestCase("http://10.0.0.5:8080")]
+    [TestCase("http://172.16.4.2")]
+    [TestCase("http://172.31.255.1")]
+    [TestCase("http://[fd12:3456::1]")]
+    [TestCase("http://agshare.local")]
+    public void HttpsOrALocalServer_IsAllowed(string url)
+    {
+        Assert.That(AgShareServer.IsAllowed(url), Is.True);
+    }
+
+    [TestCase("http://agshare.agopengps.com")]
+    [TestCase("http://attacker.example")]
+    [TestCase("http://8.8.8.8")]
+    [TestCase("http://172.32.0.1")]
+    [TestCase("http://192.168.1.20.attacker.example")]
+    [TestCase("http://local.attacker.example")]
+    [TestCase("https://user:pass@agshare.agopengps.com")]
+    [TestCase("ftp://agshare.agopengps.com")]
+    [TestCase("file:///etc/passwd")]
+    [TestCase("agshare.agopengps.com")]
+    [TestCase("not a url")]
+    public void APlainHttpInternetServer_IsRefused(string url)
+    {
+        Assert.That(AgShareServer.IsAllowed(url), Is.False);
+    }
 }

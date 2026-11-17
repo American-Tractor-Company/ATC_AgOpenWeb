@@ -47,6 +47,11 @@ internal static class AgShareRemote
             Set(state, "AgShare is turned off. Turn it on in AgShare settings", false);
             return;
         }
+        if (!AgShareServer.IsAllowed(url))
+        {
+            Set(state, "The AgShare server must use https:// (http:// only on this machine or the local network)", false);
+            return;
+        }
         switch (cmd)
         {
             case "agshare.test": _ = TestAsync(state, url, key); return;
