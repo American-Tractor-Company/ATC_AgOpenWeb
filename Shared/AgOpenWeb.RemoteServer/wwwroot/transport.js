@@ -17,7 +17,7 @@ window.RemoteTransport = {
    *           onCoverageInit?: (init:object)=>void,
    *           onCoverageCells?: (cells:object)=>void,
    *           onStatusBar?:(status:object)=>void,
-   *           onHello?:(clientId:string)=>void,
+   *           onHello?:(clientId:string, features:number)=>void,
    *           onControlState?:(state:object)=>void,
    *           onSound?:(effectId:number)=>void,
    *           onFrame?:()=>void,
@@ -337,12 +337,14 @@ window.RemoteTransport = {
           break;
         }
         case TYPE.HELLO: {
-          handlers.onHello && handlers.onHello(str());
+          const clientId = str(), features = u8(); // features: SwitchedFeature bits (VT 1, web cards 2, AgShare 4)
+          handlers.onHello && handlers.onHello(clientId, features);
           break;
         }
         case TYPE.CONFIG: {
           const vehicle = {
-            name: str(), type: i32(), hitchType: i32(), hitchLength: f64(), wheelbase: f64(),
+            name: str(), type: i32(), hitchType: i32(), hitchLength: f64(),
+            threePointHitchLength: f64(), frontHitchLength: f64(), wheelbase: f64(),
             trackWidth: f64(), antennaPivot: f64(), antennaHeight: f64(), antennaOffset: f64(),
             imuPivot: f64(), imuHeight: f64(), imuOffset: f64(),
           };
@@ -355,7 +357,7 @@ window.RemoteTransport = {
           const rdF64 = () => { const n = i32(), a = new Array(n); for (let k = 0; k < n; k++) a[k] = f64(); return a; };
           const rdI32 = () => { const n = i32(), a = new Array(n); for (let k = 0; k < n; k++) a[k] = i32(); return a; };
           const tool = {
-            type: i32(), hitchType: i32(), hitchLength: f64(), trailingHitchLength: f64(),
+            type: i32(), hitchType: i32(), workingPointFromHitch: f64(), trailingHitchLength: f64(),
             tankTrailingHitchLength: f64(), length: f64(), lookAheadOn: f64(), lookAheadOff: f64(),
             turnOffDelay: f64(), offset: f64(), overlap: f64(), trailingToolToPivotLength: f64(),
             isSectionsNotZones: !!u8(), numSections: i32(), defaultSectionWidth: f64(),
