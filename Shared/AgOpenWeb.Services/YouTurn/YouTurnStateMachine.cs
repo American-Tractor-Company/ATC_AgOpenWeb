@@ -1781,7 +1781,7 @@ public sealed class YouTurnStateMachine
 
     // The pass the tractor is on, as the turn builder walks it (YouTurnCreationService.PassForTurn),
     // and its end ahead (PassEnds.Find: the one definition of where a pass ends), kept until the
-    // pass, the way along it, the track or the field changes; the end is searched again only once
+    // pass, the way along it, the track (or its points: an edit replaces the list) or the field changes; the end is searched again only once
     // the tractor is past it. A cycle then costs a nearest-point search along the pass and no
     // polygon work (the hot-path budgets). This replaced a straight ray along the heading to the
     // nearest turn-line edge, which on a curve left the field early on the outside of a bend while
@@ -1789,6 +1789,7 @@ public sealed class YouTurnStateMachine
     private sealed class PassAhead
     {
         public Models.Track.Track? Track;
+        public List<Vec3>? TrackPoints;
         public double Offset;
         public bool SameWay;
         public Boundary? Boundary;
@@ -1816,10 +1817,11 @@ public sealed class YouTurnStateMachine
         double offset = Models.Track.PassGeometry.Offset(track, guidance.HowManyPathsAway, width, guidance.NudgeOffset);
         long stamp = SnakeFieldStamp(ctx.Boundary, turnLine);
         var p = _passAhead;
-        if (!ReferenceEquals(track, p.Track) || offset != p.Offset || headingSameWay != p.SameWay
+        if (!ReferenceEquals(track, p.Track) || !ReferenceEquals(track.Points, p.TrackPoints) || offset != p.Offset || headingSameWay != p.SameWay
             || !ReferenceEquals(ctx.Boundary, p.Boundary) || !ReferenceEquals(turnLine, p.TurnLine) || stamp != p.FieldStamp)
         {
             p.Track = track;
+            p.TrackPoints = track.Points;
             p.Offset = offset;
             p.SameWay = headingSameWay;
             p.Boundary = ctx.Boundary;
