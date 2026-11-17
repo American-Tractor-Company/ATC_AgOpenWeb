@@ -33,6 +33,10 @@ public sealed class RemoteServerHost
     /// UI's "browse to …" readout.</summary>
     public int Port { get; private set; } = 5174;
 
+    /// <summary>Runs an action on the host loop that owns the app state; the ATLAS route
+    /// preview reads the field through it. Set before <see cref="StartAsync"/>.</summary>
+    public Func<Action, Task>? RouteHostLoop { get; set; }
+
     /// <summary>Number of connected browser clients — drives the launcher's live status.</summary>
     public int ClientCount => _ws?.ClientCount ?? 0;
 
@@ -370,7 +374,9 @@ public sealed class RemoteServerHost
                     cfg.Tool.TotalWidth,cfg.Tool.Overlap,cfg.Tool.Offset,tick.SkipRows,tick.SkipMode,u.Style,u.Radius,u.DistanceFromBoundary,u.Extension,u.Smoothing,cfg.Vehicle.Wheelbase,cfg.Vehicle.TrackWidth);
                 bool idle=tick.Fix>0&&Math.Abs(tick.Pose.Speed)<=.01&&!tick.IsAutoSteerEngaged&&!tick.IsYouTurnEnabled&&!tick.IsSectionAutoMaster&&!tick.IsSectionManualAll&&!tick.IsContourMode&&tick.Sections.All(x=>x==0)&&tick.ActiveTrackName==track.Name;
                 return new RouteSnapshot(basis,idle);
-            },token);
+            },token,RouteHostLoop??throw new InvalidOperationException("ROUTE_HOST_LOOP_REQUIRED"),
+                System.Reflection.Assembly.GetEntryAssembly()?.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute),false)
+                    .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion??"unknown");
         }
 
         // The /ws receive loop's token is linked to the server's shutdown inside

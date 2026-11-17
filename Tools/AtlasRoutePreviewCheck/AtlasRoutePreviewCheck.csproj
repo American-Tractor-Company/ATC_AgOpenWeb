@@ -6,15 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../Shared/AgOpenWeb.Models/Base/Vec2.cs" />
-    <Compile Include="../../Shared/AgOpenWeb.Models/Base/Vec3.cs" />
-    <Compile Include="../../Shared/AgOpenWeb.Models/Base/GeometryMath.cs" />
-    <Compile Include="../../Shared/AgOpenWeb.Models/Base/GeoCoord.cs" />
-    <Compile Include="../../Shared/AgOpenWeb.Models/Base/GeoDelta.cs" />
-    <Compile Include="../../Shared/AgOpenWeb.Models/Base/GeoArea.cs" />
-    <Compile Include="../../Shared/AgOpenWeb.Models/Guidance/CurveProcessing.cs" />
-    <Compile Include="../../Shared/AgOpenWeb.Services/PathPlanning/DubinsPathService.cs" />
-    <Compile Include="../../Shared/AgOpenWeb.Services/PathPlanning/FieldRoutePreview.cs" />
+    <ProjectReference Include="../../Shared/AgOpenWeb.Services/AgOpenWeb.Services.csproj" />
     <None Update="synthetic-field.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

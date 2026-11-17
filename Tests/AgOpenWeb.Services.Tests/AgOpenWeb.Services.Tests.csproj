@@ -46,4 +46,10 @@
     </None>
   </ItemGroup>
 
+<ItemGroup>
+    <None Include="..\..\Tools\AtlasRoutePreviewCheck\synthetic-field.json" Link="Fixtures\atlas-route-synthetic-field.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

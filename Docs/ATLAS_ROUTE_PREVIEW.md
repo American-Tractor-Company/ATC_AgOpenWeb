@@ -1,8 +1,13 @@
 # ATLAS full-field route preview — experimental fork
 
-This branch preserves the tested AgOpenWeb 26.7.0 base commit
-`ee162399d34c074d74b03ecb3ff1f8a1d65add60`. It is not a port to current develop.
-Build identifier: `26.7.0+ee16239-atlas-route-v1`.
+Ported onto the fork's `develop` (synced with upstream). It was first built and
+bench-checked on AgOpenWeb 26.7.0 at `ee162399d34c074d74b03ecb3ff1f8a1d65add60`.
+A build with `-p:AtlasRoutePreviewBuild=true` names itself after its own commit,
+e.g. `26.7.0+<commit>-atlas-route-v1`; route exports report it as `baseEngineHash`.
+
+The endpoint reads the field, track and machine state on the host loop
+(`IUiDispatcher`), never on the HTTP thread, so a preview can't observe a
+half-updated field.
 
 ## Features
 
@@ -70,7 +75,9 @@ smoke check is reproducible with:
 dotnet run --project Tools/AtlasRoutePreviewCheck/AtlasRoutePreviewCheck.csproj
 ```
 
-Its synthetic fixture produces 11 passes and 10 turn connections. This is bench
+Its synthetic fixture produces 11 passes and 10 turn connections. The same fixture
+backs `FieldRoutePreviewTests` (Services.Tests) and `FieldRoutePreviewEndpointTests`
+(RemoteServer.Tests: token, loopback, host-loop reads, moving or changing field). This is bench
 evidence, not physical tractor acceptance or a certification of route safety.
 Existing upstream compiler warnings remain.
 
@@ -87,6 +94,6 @@ Existing upstream compiler warnings remain.
 - ATLAS coverage is an approximate sampled working-interior estimate. Invalid
   geometry is flagged rather than labeled executable. Persistence is unverified.
 
-AgOpenWeb is GPL-3.0-or-later; preserve LICENSE.md and existing notices. This fork
+AgOpenWeb is Apache-2.0; preserve LICENSE and existing notices. This fork
 adds no relicensing restriction. See the native source and tagged history for
 the exact changes.

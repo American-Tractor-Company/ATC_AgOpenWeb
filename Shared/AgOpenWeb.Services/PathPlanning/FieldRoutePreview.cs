@@ -1,4 +1,8 @@
-// Local read-only planning extension for pinned AgOpenWeb ee16239.
+// AgOpenWeb
+// Copyright (C) 2024-2026 AgOpenWeb Contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Read-only ATLAS full-field route preview.
 // Uses the engine's curve-offset and Dubins geometry. Never writes guidance or actuator state.
 using System;
 using System.Linq;
@@ -66,7 +70,8 @@ public static class FieldRoutePreview
         }if(current!=null&&current.Count>=2&&Dist(current[0],current[^1])>1)chunks.Add(current);
         return chunks;
     }
-    public static FieldRouteExport Generate(RouteBasis b,RouteOptions options)
+    /// <param name="engineBuild">The running app's version and commit, reported as BaseEngineHash.</param>
+    public static FieldRouteExport Generate(RouteBasis b,RouteOptions options,string engineBuild="unknown")
     {
         if(options.SchemaVersion!=1||!double.IsFinite(options.EnvelopeRadiusM)||options.EnvelopeRadiusM<b.WidthM/2||options.EnvelopeRadiusM>50)throw new InvalidOperationException("INVALID_ROUTE_OPTIONS");
         if(b.Boundary.Length<3||b.Boundary.Length>512||b.Reference.Length<2||b.Reference.Length>1024||b.TrackType!=2&&b.TrackType!=4)throw new InvalidOperationException("ROUTE_GEOMETRY_UNSUPPORTED");
@@ -115,6 +120,6 @@ public static class FieldRoutePreview
             segments.Add(new(segments.Count,"working-pass",ordered[i].Index,"native-curve-offset",work.Select(Pair).ToArray()));
         }
         if(segments.Sum(s=>s.Points.Length)>24000)throw new InvalidOperationException("ROUTE_TOO_COMPLEX");
-        return new(1,Version,"ee16239",true,false,b,options,segments.ToArray(),issues.OrderBy(x=>x).ToArray(),passes.Count,turnCount);
+        return new(1,Version,engineBuild,true,false,b,options,segments.ToArray(),issues.OrderBy(x=>x).ToArray(),passes.Count,turnCount);
     }
 }
