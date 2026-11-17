@@ -190,6 +190,11 @@ To use a separate phone or tablet as the in-cab display:
 The same host serves every connected device at once, so the cab PC and a tablet can show the
 screen simultaneously.
 
+The host answers to its IP addresses, `localhost` and its own computer name (also as
+`<name>.local`). To reach it by any other name, such as a reverse proxy or a Tailscale
+`*.ts.net` name, list the names in the `AGOPENWEB_ALLOWED_HOSTS` environment variable
+(comma-separated) before starting the host. A page from another site can't connect to the host.
+
 ---
 
 ## Moving from AgOpenGPS
@@ -230,6 +235,10 @@ to start at all.
 double-check the IP address, and make sure the host PC's firewall allows inbound connections on
 port **5174**. (The Windows Service installer opens this automatically; the desktop window mode may
 prompt you to allow it on first run.)
+
+**The browser shows "host not allowed".** You opened the host by a name it doesn't know. Use the
+IP address, or add the name to `AGOPENWEB_ALLOWED_HOSTS` (see
+[Connecting a tablet](#connecting-a-tablet-or-phone-over-wi-fi)).
 
 **Android blocks the install.** Sideloading requires you to allow "install unknown apps" for
 whatever app you opened the APK from (your browser or file manager). Grant it, then re-open the
