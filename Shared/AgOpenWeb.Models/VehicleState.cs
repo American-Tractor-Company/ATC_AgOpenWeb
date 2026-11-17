@@ -281,6 +281,36 @@ public struct VehicleState
     }
 
     /// <summary>
+    /// Take a fix parsed into a copy (<paramref name="parsed"/>): only the members the NMEA parser
+    /// and epoch assembler write, so the control members (engagement, Free Drive, sections) set
+    /// meanwhile from another thread are kept. Keep in step with NmeaParserServiceFast.
+    /// </summary>
+    public void CopyParsedFix(in VehicleState parsed)
+    {
+        Latitude = parsed.Latitude;
+        Longitude = parsed.Longitude;
+        Altitude = parsed.Altitude;
+        Speed = parsed.Speed;
+        Heading = parsed.Heading;
+        HeadingRadians = parsed.HeadingRadians;
+        FixQuality = parsed.FixQuality;
+        Satellites = parsed.Satellites;
+        Hdop = parsed.Hdop;
+        DifferentialAge = parsed.DifferentialAge;
+        Roll = parsed.Roll;
+        RollValid = parsed.RollValid;
+        Pitch = parsed.Pitch;
+        YawRate = parsed.YawRate;
+        ImuHeading = parsed.ImuHeading;
+        ImuValid = parsed.ImuValid;
+        HasDualHeading = parsed.HasDualHeading;
+        SentenceType = parsed.SentenceType;
+        GpsValid = parsed.GpsValid;
+        ParseStartTicks = parsed.ParseStartTicks;
+        ParseEndTicks = parsed.ParseEndTicks;
+    }
+
+    /// <summary>
     /// Mark parse as started.
     /// </summary>
     public void MarkParseStart()
