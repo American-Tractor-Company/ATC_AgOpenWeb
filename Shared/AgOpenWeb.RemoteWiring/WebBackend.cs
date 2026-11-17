@@ -58,7 +58,8 @@ public sealed class WebBackend
         var vm = sp.GetRequiredService<MainViewModel>();
 
         // Start the embedded browser server, then wire its command handler + projectors.
-        var server = new AgOpenWeb.RemoteServer.RemoteServerHost();
+        var ui = sp.GetRequiredService<IUiDispatcher>();
+        var server = new AgOpenWeb.RemoteServer.RemoteServerHost { RouteHostLoop = action => ui.InvokeAsync(action) };
         await server.StartAsync(
             sp.GetRequiredService<ApplicationState>(),
             sp.GetRequiredService<ICoverageMapService>(),

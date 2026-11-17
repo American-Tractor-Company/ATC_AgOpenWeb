@@ -133,6 +133,41 @@ public class JobFormatVersionTests
     }
 
     [Test]
+    public void A_job_newer_by_its_job_json_has_its_coverage_neither_read_nor_written()
+    {
+        JobJsonService.Save(NewJob(), _fieldDir);
+        var first = Coverage();
+        PaintStrip(first, 0, 10, 0, 20);
+        first.SaveToFile(_fieldDir, Task);
+        EditJson(JobFile, o => o["schemaVersion"] = JobJsonService.CurrentSchemaVersion + 1);
+        var before = Snapshot();
+
+        var svc = Coverage();
+        svc.LoadFromFile(_fieldDir, Task);
+        Assert.That(svc.TotalWorkedArea, Is.EqualTo(0), "its coverage isn't read");
+
+        PaintStrip(svc, 20, 30, 0, 20);
+        svc.SaveToFile(_fieldDir, Task);
+        Assert.That(Snapshot(), Is.EqualTo(before), "nothing was written");
+    }
+
+    [Test]
+    public void A_job_newer_by_its_coverage_keeps_its_job_json()
+    {
+        JobJsonService.Save(NewJob(), _fieldDir);
+        var first = Coverage();
+        PaintStrip(first, 0, 10, 0, 20);
+        first.SaveToFile(JobDir);
+        EditJson(ManifestFile, o => o["SchemaVersion"] = CoverageTileStore.CurrentSchemaVersion + 1);
+        var bytes = File.ReadAllText(JobFile);
+
+        var job = JobJsonService.Load(_fieldDir, Task)!;
+        job.Notes = "windy";
+        JobJsonService.Save(job, _fieldDir);
+        Assert.That(File.ReadAllText(JobFile), Is.EqualTo(bytes));
+    }
+
+    [Test]
     public void The_current_versions_are_not_newer()
     {
         JobJsonService.Save(NewJob(), _fieldDir);

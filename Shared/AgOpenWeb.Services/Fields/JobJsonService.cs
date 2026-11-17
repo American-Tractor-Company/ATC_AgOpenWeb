@@ -86,8 +86,8 @@ public static class JobJsonService
         if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
         var path = Path.Combine(dir, JobFileName);
-        if (SchemaVersionOf(path) > CurrentSchemaVersion)
-            return; // a newer build's job: read, never written
+        if (IsNewerFormat(fieldDirectory, job.TaskName))
+            return; // a newer build's job, by its job.json or its coverage: read, never written
 
         var dto = JobDto.FromJob(job);
         var json = JsonSerializer.Serialize(dto, SerializerOptions);

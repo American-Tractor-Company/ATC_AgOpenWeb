@@ -853,7 +853,9 @@ public class AutoSteerService : IAutoSteerService
                     if (simulatorIsSource)
                     {
                         if (probe.FixQuality <= 0) continue;
-                        _state = probe;
+                        // Only the parsed fix: the whole copy would restore the control
+                        // members as they were before the parse, undoing a disengage made since.
+                        _state.CopyParsedFix(in probe);
                     }
 
                     // A real fix parsed from inbound NMEA: mark the live-GPS gate so the

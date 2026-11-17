@@ -17,6 +17,8 @@
     <Exec Command="git describe --always --dirty" ConsoleToMsBuild="true" StandardOutputImportance="low" IgnoreExitCode="true">
       <Output TaskParameter="ConsoleOutput" PropertyName="SourceRevisionId" />
     </Exec>
+    <!-- An ATLAS route preview build names itself after its own commit (e.g. "26.7.0+1a2b3c4-atlas-route-v1") -->
+    <PropertyGroup Condition="'$(AtlasRoutePreviewBuild)' == 'true'"><SourceRevisionId>$(SourceRevisionId)-atlas-route-v1</SourceRevisionId></PropertyGroup>
     <!-- Write hash to a temp file so MSBuild detects changes and doesn't skip CoreCompile -->
     <WriteLinesToFile File="$(IntermediateOutputPath)git-hash.txt" Lines="$(SourceRevisionId)" Overwrite="true" WriteOnlyWhenDifferent="true" />
     <ItemGroup>

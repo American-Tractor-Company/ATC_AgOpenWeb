@@ -80,4 +80,11 @@ public static class HitchMigration
 
     /// <summary>A profile written by a newer build: this build leaves it as it is (as #825's fields and jobs).</summary>
     public static bool IsNewerFormat(string path) => FormatVersionOf(path) > CurrentFormatVersion;
+
+    /// <summary>
+    /// The profile or its <c>.bak</c> is a newer build's. A save rolls the primary into the
+    /// <c>.bak</c>, so a damaged primary (loaded from a newer <c>.bak</c>) would replace it.
+    /// </summary>
+    public static bool IsNewerFormatOrBackup(string path) =>
+        IsNewerFormat(path) || IsNewerFormat(path + Storage.AtomicJsonFile.BackupSuffix);
 }
