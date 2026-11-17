@@ -40,7 +40,7 @@ public static class ToolProfileJsonService
 
         // A profile from a newer build is left as it is: this build would drop what it doesn't read.
         var path = GetJsonPath(toolsDirectory, profileName);
-        if (HitchMigration.IsNewerFormat(path)) return;
+        if (HitchMigration.IsNewerFormatOrBackup(path)) return;
 
         // Atomic write + .bak last-known-good (see AtomicJsonFile).
         AtomicJsonFile.WriteJson(path, ToDto(store), Options);

@@ -40,7 +40,7 @@ public static class VehicleProfileJsonService
         // mid-write can never leave a truncated profile that loads as defaults.
         var path = GetJsonPath(vehiclesDirectory, profileName);
         // A profile from a newer build is left as it is: this build would drop what it doesn't read.
-        if (HitchMigration.IsNewerFormat(path)) return;
+        if (HitchMigration.IsNewerFormatOrBackup(path)) return;
         AtomicJsonFile.WriteJson(path, ToDto(store), Options);
     }
 

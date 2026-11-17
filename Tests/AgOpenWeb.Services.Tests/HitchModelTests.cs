@@ -230,6 +230,24 @@ public class HitchModelTests
     }
 
     [Test]
+    public void A_newer_builds_backup_of_a_damaged_profile_is_not_overwritten()
+    {
+        const string newer = "{ \"formatVersion\": 4, \"tool\": { \"width\": 6, \"somethingNew\": 1 } }";
+        foreach (var (dir, save) in new (string, Action)[]
+        {
+            (_toolsDir, () => ToolProfileJsonService.Save(_toolsDir, "Rig", ConfigurationStore.Instance)),
+            (_vehiclesDir, () => VehicleProfileJsonService.Save(_vehiclesDir, "Rig", ConfigurationStore.Instance)),
+        })
+        {
+            var path = Path.Combine(dir, "Rig.json");
+            File.WriteAllText(path, "{ \"formatVersion\": 2, \"tool\": ");
+            File.WriteAllText(path + ".bak", newer);
+            save();
+            Assert.That(File.ReadAllText(path + ".bak"), Is.EqualTo(newer), dir);
+        }
+    }
+
+    [Test]
     public void A_profile_from_a_newer_build_is_not_overwritten()
     {
         var path = Path.Combine(_toolsDir, "Rig.json");
