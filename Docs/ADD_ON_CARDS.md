@@ -3,9 +3,8 @@
 An add-on reaches the operator in AgOpenWeb through a **card** beside the map. There are two
 kinds, and an add-on uses one or the other:
 
-> **Both kinds of card are switched off for now**, while the work is on the foundation and
-> navigation. To work on an add-on, start AgOpenWeb with `AGOPENWEB_FEATURES=vt,webcards` in its
-> environment.
+> Upstream AgOpenWeb switches both kinds of card off for now; this fork runs them by default.
+> `AGOPENWEB_FEATURES` (e.g. `vt,webcards`, or `none`) replaces that default when set.
 
 | | **VT card** | **Web card** |
 |---|---|---|

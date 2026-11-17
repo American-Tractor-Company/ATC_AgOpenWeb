@@ -6,7 +6,7 @@ using System;
 
 namespace AgOpenWeb.Models;
 
-/// <summary>Features built but switched off for now. The bits go to every browser in the Hello frame.</summary>
+/// <summary>Features a host can switch off. The bits go to every browser in the Hello frame.</summary>
 [Flags]
 public enum SwitchedFeature : byte
 {
@@ -21,33 +21,37 @@ public enum SwitchedFeature : byte
 }
 
 /// <summary>
-/// Which of the features switched off for now (the work is on the foundation and navigation first) this host runs.
-/// A hidden feature is off: its controls are gone from every browser, the host does not start its
-/// service (no VT stack, no gateway browsing) and refuses its commands. The settings a tester made
-/// for it are kept. <c>AGOPENWEB_FEATURES</c> turns them back on for development: a comma list of
-/// <c>vt</c>, <c>webcards</c>, <c>agshare</c>, or <c>all</c>.
+/// Which of the switchable features this host runs. Upstream switches them all off for now; this
+/// fork runs them all. A hidden feature is off: its controls are gone from every browser, the host
+/// does not start its service (no VT stack, no gateway browsing) and refuses its commands. The
+/// settings made for it are kept. <c>AGOPENWEB_FEATURES</c>, when set, replaces the default: a comma
+/// list of <c>vt</c>, <c>webcards</c>, <c>agshare</c>, <c>all</c>, or <c>none</c>.
 /// </summary>
 public static class FeatureSwitches
 {
-    /// <summary>What a build runs by default: none of them.</summary>
-    public const SwitchedFeature Default = SwitchedFeature.None;
+    /// <summary>What a build runs when <c>AGOPENWEB_FEATURES</c> is not set: all of them.</summary>
+    public const SwitchedFeature Default = SwitchedFeature.All;
 
     public const string EnvironmentVariable = "AGOPENWEB_FEATURES";
 
     private static SwitchedFeature? _enabled;
 
-    /// <summary>The features on in this process (the default, plus <c>AGOPENWEB_FEATURES</c>), read once.</summary>
+    /// <summary>The features on in this process (<c>AGOPENWEB_FEATURES</c>, or the default when it is not set), read once.</summary>
     public static SwitchedFeature Enabled
     {
-        get => _enabled ??= Default | Parse(Environment.GetEnvironmentVariable(EnvironmentVariable));
+        get => _enabled ??= Resolve(Environment.GetEnvironmentVariable(EnvironmentVariable));
         set => _enabled = value; // tests
     }
+
+    /// <summary>The features a value of <c>AGOPENWEB_FEATURES</c> turns on: the default when unset or blank.</summary>
+    public static SwitchedFeature Resolve(string? list) =>
+        string.IsNullOrWhiteSpace(list) ? Default : Parse(list);
 
     public static bool VirtualTerminal => (Enabled & SwitchedFeature.VirtualTerminal) != 0;
     public static bool WebCards => (Enabled & SwitchedFeature.WebCards) != 0;
     public static bool AgShare => (Enabled & SwitchedFeature.AgShare) != 0;
 
-    /// <summary>The features a comma list names; unknown names are ignored.</summary>
+    /// <summary>The features a comma list names; unknown names (and <c>none</c>) add nothing.</summary>
     public static SwitchedFeature Parse(string? list)
     {
         var on = SwitchedFeature.None;
