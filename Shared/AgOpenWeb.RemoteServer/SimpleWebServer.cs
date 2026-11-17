@@ -60,7 +60,34 @@ public sealed class SimpleWebServer
 
     public int Port => _port;
 
-    public SimpleWebServer(int port) => _port = port;
+    /// <summary>DNS names this server answers to, besides IP literals, <c>localhost</c> and this
+    /// machine's own name. A request whose Host header names anything else is refused 403: that
+    /// is a page on another site reaching the host by DNS rebinding. More names (a reverse proxy,
+    /// a tailnet name) come from <c>AGOPENWEB_ALLOWED_HOSTS</c>, comma-separated.</summary>
+    public ISet<string> AllowedHostNames { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    public SimpleWebServer(int port)
+    {
+        _port = port;
+        AddMachineNames(AllowedHostNames);
+        foreach (var name in (Environment.GetEnvironmentVariable("AGOPENWEB_ALLOWED_HOSTS") ?? "")
+                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            AllowedHostNames.Add(name.TrimEnd('.'));
+    }
+
+    private static void AddMachineNames(ISet<string> names)
+    {
+        string host;
+        try { host = Dns.GetHostName(); }
+        catch { return; } // no name to add; IP literals and localhost still work
+        if (string.IsNullOrWhiteSpace(host)) return;
+        host = host.TrimEnd('.');
+        names.Add(host);
+        var dot = host.IndexOf('.');
+        var shortName = dot > 0 ? host[..dot] : host;
+        names.Add(shortName);
+        names.Add(shortName + ".local"); // mDNS / Bonjour
+    }
 
     // ---- route registration (called before StartAsync) ----
 
@@ -132,6 +159,16 @@ public sealed class SimpleWebServer
                 var req = await ReadRequestHeadAsync(stream, reqCts.Token).ConfigureAwait(false);
                 if (req is null) return; // closed, idle-timed-out, or malformed
 
+                // Browsers let any site open a WebSocket or POST to this host, so check here who
+                // the request is for (Host: DNS rebinding) and, for a socket or a POST, which
+                // page sent it (Origin: cross-site WebSocket hijacking).
+                var refusal = Refusal(req);
+                if (refusal is not null)
+                {
+                    await WriteResponseAsync(stream, refusal, keepAlive: false, ct).ConfigureAwait(false);
+                    return;
+                }
+
                 if (req.Method == "POST" && _post.TryGetValue(req.Path, out var post))
                 {
                     // A body can take longer than the idle wait: a phone video over cab Wi-Fi.
@@ -164,6 +201,68 @@ public sealed class SimpleWebServer
                 if (!keepAlive) return;
             }
         }
+    }
+
+    private static readonly Response HostRequired = new(400, "text/plain", "host header required"u8.ToArray());
+    private static readonly Response HostNotAllowed = new(403, "text/plain",
+        "host not allowed: add the name to AGOPENWEB_ALLOWED_HOSTS"u8.ToArray());
+    private static readonly Response OriginNotAllowed = new(403, "text/plain", "cross-origin request refused"u8.ToArray());
+
+    private Response? Refusal(Request req)
+    {
+        if (!req.Headers.TryGetValue("host", out var hostHeader) || !TryParseAuthority(hostHeader, out var host, out var hostPort))
+            return HostRequired;
+        if (!IsAllowedHost(host)) return HostNotAllowed;
+
+        bool upgrade = req.Method == "GET" && req.Headers.TryGetValue("upgrade", out var up)
+            && up.Contains("websocket", StringComparison.OrdinalIgnoreCase);
+        if ((upgrade || req.Method == "POST") && !IsSameOrigin(req, host, hostPort))
+            return OriginNotAllowed;
+        return null;
+    }
+
+    /// <summary>An IP literal, <c>localhost</c>, or a name in <see cref="AllowedHostNames"/>. An IP
+    /// literal is safe to answer: a rebinding page's Host is always the attacker's DNS name.</summary>
+    private bool IsAllowedHost(string host)
+    {
+        if (Uri.CheckHostName(host) is UriHostNameType.IPv4 or UriHostNameType.IPv6) return true;
+        var name = host.TrimEnd('.');
+        return name.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase)
+            || AllowedHostNames.Contains(name);
+    }
+
+    /// <summary>No Origin (a native client: the tests, a tool) or the page this host served: the
+    /// Origin's host and port are the request's Host. Everything else, "null" included, is refused.</summary>
+    private static bool IsSameOrigin(Request req, string host, int? hostPort)
+    {
+        if (!req.Headers.TryGetValue("origin", out var origin)) return true;
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var o)
+            || (o.Scheme != Uri.UriSchemeHttp && o.Scheme != Uri.UriSchemeHttps)
+            || !string.IsNullOrEmpty(o.UserInfo))
+            return false;
+        int port = hostPort ?? (o.Scheme == Uri.UriSchemeHttps ? 443 : 80);
+        var originHost = o.HostNameType == UriHostNameType.IPv6 ? o.Host.Trim('[', ']') : o.Host;
+        return o.Port == port && string.Equals(originHost.TrimEnd('.'), host.TrimEnd('.'), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Splits a Host header ("name", "name:port", "1.2.3.4:port", "[::1]:port") into the
+    /// host (IPv6 without brackets, as <see cref="Uri.Host"/> would compare it) and the port if given.</summary>
+    private static bool TryParseAuthority(string value, out string host, out int? port)
+    {
+        host = ""; port = null;
+        if (string.IsNullOrWhiteSpace(value) || value.IndexOfAny(new[] { '/', '\\', '@', '?', '#', ' ' }) >= 0) return false;
+        if (!Uri.TryCreate("http://" + value + "/", UriKind.Absolute, out var u) || u.Authority.Length == 0) return false;
+        int close = value.LastIndexOf(']'), colon = value.LastIndexOf(':');
+        if (colon > close)
+        {
+            if (!int.TryParse(value[(colon + 1)..], System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var p) || p is < 1 or > 65535)
+                return false;
+            port = p;
+        }
+        host = u.HostNameType == UriHostNameType.IPv6 ? u.Host.Trim('[', ']') : u.Host;
+        return host.Length > 0;
     }
 
     private async Task<Response> RouteAsync(Request req)
