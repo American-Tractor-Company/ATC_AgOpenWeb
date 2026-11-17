@@ -7,14 +7,22 @@ using AgOpenWeb.Models;
 namespace AgOpenWeb.Models.Tests;
 
 /// <summary>
-/// The VT cards, web cards and AgShare are built but switched off for now (the foundation and
-/// navigation first), and a feature switched off takes no commands.
+/// The VT cards, web cards and AgShare run by default in this fork (upstream switches them off for
+/// now), <c>AGOPENWEB_FEATURES</c> can switch them off, and a feature switched off takes no commands.
 /// </summary>
 public class FeatureSwitchesTests
 {
     [Test]
-    public void Vt_web_cards_and_agshare_are_off_by_default()
-        => Assert.That(FeatureSwitches.Default, Is.EqualTo(SwitchedFeature.None));
+    public void Vt_web_cards_and_agshare_are_on_by_default()
+        => Assert.That(FeatureSwitches.Default, Is.EqualTo(SwitchedFeature.All));
+
+    [TestCase(null, SwitchedFeature.All)]
+    [TestCase("  ", SwitchedFeature.All)]
+    [TestCase("none", SwitchedFeature.None)]
+    [TestCase("vt", SwitchedFeature.VirtualTerminal)]
+    [TestCase("webcards,agshare", SwitchedFeature.WebCards | SwitchedFeature.AgShare)]
+    public void The_environment_list_replaces_the_default(string? list, SwitchedFeature expected)
+        => Assert.That(FeatureSwitches.Resolve(list), Is.EqualTo(expected));
 
     [TestCase(null, SwitchedFeature.None)]
     [TestCase("", SwitchedFeature.None)]
@@ -22,6 +30,7 @@ public class FeatureSwitchesTests
     [TestCase(" WebCards , agshare ", SwitchedFeature.WebCards | SwitchedFeature.AgShare)]
     [TestCase("all", SwitchedFeature.All)]
     [TestCase("vt,nonsense", SwitchedFeature.VirtualTerminal)]
+    [TestCase("none", SwitchedFeature.None)]
     public void The_environment_list_turns_features_on(string? list, SwitchedFeature expected)
         => Assert.That(FeatureSwitches.Parse(list), Is.EqualTo(expected));
 
