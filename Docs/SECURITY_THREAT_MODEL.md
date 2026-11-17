@@ -307,3 +307,88 @@ Ranking the findings by cost/benefit:
 
 **Document-only:**
 - [F8](#f8) — note password plaintext storage in the settings UI.
+
+## ATC system-wide threat model
+
+Added for ATC security scans; covers this repository alongside the ATC platform, ATLAS-Edge, ATC-GCP-bridge and tlc-harvester-sdk.
+
+
+### Scope and evidence
+
+Repositories (default branches, whole repositories unless noted under exclusions):
+
+- `American-Tractor-Company/American-Tractor-Company` — website, account/organization services, Atlas workspace, device API, SDKs, release/infra config (`infra/`, `ops/`, Dockerfiles, cloudbuild files).
+- `American-Tractor-Company/American-Tractor-Company-ATLAS-Edge` — on-vehicle ROS capture to MCAP spool (`atlas_edge/`), vehicle profiles (`edge/jets*`), bench-only live `media_bridge/`, systemd units (`deploy/`).
+- `American-Tractor-Company/ATC-GCP-bridge` — on-device uploader from the Edge spool to GCS and the Atlas catalog (`atc_gcp_bridge/`, `deploy/atc-gcp-bridge@.service`).
+- `American-Tractor-Company/ATC_AgOpenWeb` — ATC fork of AgOpenWeb3: .NET guidance host + web client served on the cab LAN (`Shared/`, `Platforms/`).
+- `American-Tractor-Company/tlc-harvester-sdk` — private Rust/Wasm vehicle SDK (`rust/`, `protocol-v2/`, `schemas/`).
+
+Infrastructure evidence lives inside these repositories (GCP configs in `American-Tractor-Company/ops` and `infra/`, systemd units in Edge and bridge). No separate Terraform/Kubernetes repository was found. Existing security documents folded in: the earlier website threat model (profile "ATC repository security threat model", user-confirmed on 2026-11-13), `ATC_AgOpenWeb/Docs/SECURITY_THREAT_MODEL.md`, `ATC-GCP-bridge/docs/security-qualification.md`.
+
+### Components
+
+| Component | Code covered | Boundary |
+|---|---|---|
+| Web | `American-Tractor-Company`: `app/` public/UI routes, `public/`, `proxy.ts`, client `lib/`, `next.config.mjs` | Untrusted browsers over HTTPS; private responses must not be cached. |
+| Identity | `American-Tractor-Company`: `lib/server/auth.ts`, `account-*`, `organization-*`, `activation-console.ts`, `social-profile.ts`, `signup-proof.ts`, `company-email.ts`, auth/org API routes | Better Auth accounts, sessions, org roles, ATC admin vs customer admin. |
+| Atlas | `American-Tractor-Company`: `machines.ts`, `machine-*`, `atlas-*`, `farms.ts`, `farm-http.ts`, `guidance-paths.ts`, `app/api/atlas/`, machine routes, `sdk/atlas-browser` | Tenant- and machine-scoped fleet, farm, mission and live data. |
+| Device | `American-Tractor-Company`: `devices.ts`, `device-http.ts`, `device-rate-limit.ts`, `telemetry.ts`, `app/api/v1/`, `sdk/atlas-device` | Ed25519-enrolled devices with scoped short-lived sessions and signed sequenced reports. |
+| Media | `American-Tractor-Company`: `media*`, camera/recording/media-access routes, `workers/media-service.mjs` | Camera sessions, private GCS recordings, signed URLs. |
+| Email | `American-Tractor-Company`: `email-*`, `workers/email-*` | Encrypted outbox, private workers, tokens in mail. |
+| Platform | `American-Tractor-Company`: `database.ts`, `config.ts`, `monitoring.ts`, `infra/`, `ops/`, `.github/workflows/`, Dockerfiles, `scripts/`, `db/` | Cloud Run identities, Cloud SQL, GCS, Secret Manager, release/promotion authority. |
+| Edge | `ATLAS-Edge`: `atlas_edge/`, `edge/`, `deploy/`, `media_bridge/` | On-vehicle capture and spool; loopback DDS; outbound WHIP for bench media. |
+| GCP Bridge | `ATC-GCP-bridge`: all | Reads the Edge spool, holds GCS/WIF credentials and the Atlas device key, uploads create-only. |
+| AgOpenWeb | `ATC_AgOpenWeb`: all | Cab guidance host; web UI on LAN port 5174; UDP modules 8888/9999; NTRIP to the internet; steering output. |
+| Harvester SDK | `tlc-harvester-sdk`: all | Library: WSS/mTLS telemetry, command handoff, v2 transport; applications own authorization. |
+
+Assign overlapping files by the vulnerable operation.
+
+### Entry points and who reaches them
+
+1. Internet → Atlas website, Better Auth, webhooks (`figma-webhook`), device ingestion (`app/api/v1/devices`). Anonymous users, customers of other orgs, enrolled devices.
+2. Device ↔ cloud: Edge/bridge/SDK clients use enrolled-device signed APIs and GCS with pinned service-account/WIF principals.
+3. Cab LAN → AgOpenWeb web UI (`http://<host>:5174`, WebSocket commands gated by `ControlAuthority`) and UDP PGN modules; internet → NTRIP client.
+4. Local host: Edge spool files read by the bridge; root and the capture producer are trusted (bridge qualification report).
+5. Supply chain: GitHub workflows, Cloud Build, NuGet/npm/cargo dependencies, vendored Atlas SDK.
+
+### Assets
+
+- Credentials/authority: account sessions and tokens, device private keys and enrollment/session tokens, GCS/WIF credentials on devices, cloud runtime/migration/release identities, NTRIP credentials.
+- Customer data: accounts, org membership, machine ownership, farm boundaries, telemetry/location, missions/coverage, recordings and camera streams.
+- Safety/integrity: steering and section commands (AgOpenWeb), device-to-machine binding, recording integrity, release integrity.
+
+User-confirmed priorities (2026-11-17, all repositories): customer tenant data and cross-org isolation in Atlas; vehicle control/steering safety (AgOpenWeb, Edge); device identity/enrollment and GCS recordings; GCP credentials and the release pipeline. The user weighted these all equally; this is context, not a blanket escalation.
+
+### Attacker profiles
+
+User-confirmed (2026-11-17): every attacker matters, including Internet users and other Atlas customers (tenants), a malicious device on the farm/cab LAN, a stolen or compromised vehicle device, and insiders with repository or GCP access. No attacker profile is ruled out.
+
+### Existing controls
+
+- Website: see prior model — Better Auth with session revalidation, origin/CSRF checks, DB-backed rate limits, private IAM Cloud SQL, Ed25519 device proofs, monitoring allowlists, separate promotion approvals.
+- Bridge: pinned principal/WIF provider/endpoints, rejection of executable/URL credential sources, create-only generation preconditions, bounded manifests, traversal/hardlink rejection, separate uploader UID, local deletion forbidden (`config.py`, `security.py`).
+- Edge: loopback-only DDS profiles; media bridge is bench-only and not started by the capture target.
+- AgOpenWeb: single control holder with deadman; simulator never steers; NMEA checksum validation (`Docs/SECURITY_THREAT_MODEL.md`).
+
+### Out of scope and accepted risk (user/author-provided)
+
+User-confirmed (2026-11-17): whole repositories stay in scope; nothing is excluded from scanning. The user kept these draft assumptions as accepted: root administrators on vehicle hosts and the cab LAN are trusted, and AgOpenWeb F5/F6 are accepted risk. The user also said:
+
+- Issues that only affect bench-only or legacy code (`ATLAS-Edge/media_bridge/`, legacy vehicle profiles under `ATLAS-Edge/edge/jets*`, other code marked legacy/bench) are lower priority.
+- Issues that only affect staging are lower priority.
+
+Note the tension: "malicious LAN device" is a confirmed attacker, but the user also accepted the cab LAN as trusted and AgOpenWeb F5/F6 as accepted risk. Read together: LAN-only issues that fall within F5/F6 or need a trusted root/LAN position are accepted risk; other LAN-reachable issues are still reported.
+
+Repository-authored records:
+
+- `ATC_AgOpenWeb/Docs/SECURITY_THREAT_MODEL.md` (authored security model) records as design-accepted risk: unauthenticated LAN UDP module spoofing (F5) and forwarding unparsed RTCM to GPS hardware (F6); plaintext NTRIP password in `AppSettings.json` (F8) as design-acceptable; elevation inside the single-user cab app out of scope.
+- `ATC-GCP-bridge/docs/security-qualification.md`: root administrators and the configured capture producer are trusted; no device attestation claimed.
+
+### Finding tags
+
+Component (above), CVE, Owner team, Environment (prod/staging/device) — chosen by the user.
+
+### Open questions
+
+- No team-ownership map was supplied; Owner team is set only when repository evidence (CODEOWNERS etc.) names one.
+- Live deployment state and physical safety interlocks are unverified.
